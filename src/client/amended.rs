@@ -202,6 +202,12 @@ impl<Body> AmendedRequest<Body> {
             req_host_header = true;
         }
 
+        let mut req_auth_header = false;
+        if let Some(h) = self.headers_get(header::AUTHORIZATION) {
+            h.to_str().map_err(|_| Error::BadAuthorizationHeader)?;
+            req_auth_header = true;
+        }
+
         let mut content_length: Option<u64> = None;
         if let Some(h) = self.headers_get(header::CONTENT_LENGTH) {
             let n = h
@@ -249,6 +255,7 @@ impl<Body> AmendedRequest<Body> {
         Ok(RequestInfo {
             body_mode,
             req_host_header,
+            req_auth_header,
             req_body_header,
         })
     }
@@ -257,5 +264,6 @@ impl<Body> AmendedRequest<Body> {
 pub(crate) struct RequestInfo {
     pub body_mode: BodyWriter,
     pub req_host_header: bool,
+    pub req_auth_header: bool,
     pub req_body_header: bool,
 }

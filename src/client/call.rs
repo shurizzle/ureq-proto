@@ -123,7 +123,8 @@ impl<State, B> Call<State, B> {
         }
 
         if let Some(auth) = self.request.uri().authority() {
-            if let Some(user) = auth.username() {
+            if auth.userinfo().is_some() && !info.req_auth_header {
+                let user = auth.username().unwrap_or_default();
                 let pass = auth.password().unwrap_or_default();
                 let creds = BASE64_STANDARD.encode(format!("{}:{}", user, pass));
                 let auth = format!("Basic {}", creds);
@@ -998,6 +999,27 @@ mod test {
             s,
             "GET /page HTTP/1.1\r\nhost: f.test\r\n\
                 authorization: Basic OnNlY3JldA==\r\n\r\n"
+        );
+    }
+
+    #[test]
+    fn override_auth_header() {
+        let req = Request::get("http://martin:secret@f.test/page")
+            // This should override the auth from the URI
+            .header("authorization", "meh meh meh")
+            .body(())
+            .unwrap();
+        let mut call = Call::without_body(req).unwrap();
+
+        let mut output = vec![0; 1024];
+        let n = call.write(&mut output).unwrap();
+
+        let s = str::from_utf8(&output[..n]).unwrap();
+
+        assert_eq!(
+            s,
+            "GET /page HTTP/1.1\r\nhost: f.test\r\n\
+                authorization: meh meh meh\r\n\r\n"
         );
     }
 }
