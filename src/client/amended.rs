@@ -1,6 +1,6 @@
 use std::mem;
 
-use http::{HeaderMap, HeaderName, HeaderValue, Method, Request, Uri, Version};
+use http::{header, HeaderMap, HeaderName, HeaderValue, Method, Request, Uri, Version};
 use url::Url;
 
 use crate::body::BodyWriter;
@@ -128,13 +128,13 @@ impl<Body> AmendedRequest<Body> {
             .filter(|v| !self.unset.iter().any(|x| x == v.0))
     }
 
-    fn headers_get_all(&self, key: &'static str) -> impl Iterator<Item = &HeaderValue> {
+    fn headers_get_all(&self, key: HeaderName) -> impl Iterator<Item = &HeaderValue> {
         self.headers()
             .filter(move |(k, _)| *k == key)
             .map(|(_, v)| v)
     }
 
-    fn headers_get(&self, key: &'static str) -> Option<&HeaderValue> {
+    fn headers_get(&self, key: HeaderName) -> Option<&HeaderValue> {
         self.headers_get_all(key).next()
     }
 
@@ -186,24 +186,24 @@ impl<Body> AmendedRequest<Body> {
 
         m.verify_version(v)?;
 
-        let count_host = self.headers_get_all("host").count();
+        let count_host = self.headers_get_all(header::HOST).count();
         if count_host > 1 {
             return Err(Error::TooManyHostHeaders);
         }
 
-        let count_len = self.headers_get_all("content-length").count();
+        let count_len = self.headers_get_all(header::CONTENT_LENGTH).count();
         if count_len > 1 {
             return Err(Error::TooManyContentLengthHeaders);
         }
 
         let mut req_host_header = false;
-        if let Some(h) = self.headers_get("host") {
+        if let Some(h) = self.headers_get(header::HOST) {
             h.to_str().map_err(|_| Error::BadHostHeader)?;
             req_host_header = true;
         }
 
         let mut content_length: Option<u64> = None;
-        if let Some(h) = self.headers_get("content-length") {
+        if let Some(h) = self.headers_get(header::CONTENT_LENGTH) {
             let n = h
                 .to_str()
                 .ok()
@@ -213,7 +213,7 @@ impl<Body> AmendedRequest<Body> {
         }
 
         let has_chunked = self
-            .headers_get_all("transfer-encoding")
+            .headers_get_all(header::TRANSFER_ENCODING)
             .filter_map(|v| v.to_str().ok())
             .any(|v| compare_lowercase_ascii(v, "chunked"));
 
