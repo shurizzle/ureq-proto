@@ -176,7 +176,9 @@ pub fn try_parse_request<const N: usize>(
         Method::from_bytes(v.as_bytes()).map_err(|_| Error::RequestInvalidMethod)?
     };
 
-    let mut builder = Request::builder().version(version).method(method);
+    let uri = req.path.unwrap_or("/");
+
+    let mut builder = Request::builder().uri(uri).version(version).method(method);
 
     for h in req.headers {
         builder = builder.header(h.name, h.value);
