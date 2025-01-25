@@ -2,6 +2,7 @@ use http::{Method, Response, StatusCode};
 
 use crate::client::flow::RedirectAuthHeaders;
 use crate::client::test::TestSliceExt;
+use crate::Error;
 
 use super::scenario::Scenario;
 
@@ -84,6 +85,72 @@ fn relative_url_relative_path() {
         .unwrap();
 
     assert_eq!(&flow.uri().to_string(), "https://a.test/x/y/bar.html");
+}
+
+#[test]
+fn relative_url_parent_relative() {
+    let scenario = Scenario::builder()
+        .get("https://a.test/x/foo.html")
+        .redirect(StatusCode::FOUND, "../bar.html")
+        .build();
+
+    let flow = scenario
+        .to_redirect()
+        .as_new_flow(RedirectAuthHeaders::Never)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(&flow.uri().to_string(), "https://a.test/bar.html");
+}
+
+#[test]
+fn relative_url_dot_relative() {
+    let scenario = Scenario::builder()
+        .get("https://a.test/x/foo.html")
+        .redirect(StatusCode::FOUND, "./bar.html")
+        .build();
+
+    let flow = scenario
+        .to_redirect()
+        .as_new_flow(RedirectAuthHeaders::Never)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(&flow.uri().to_string(), "https://a.test/x/bar.html");
+}
+
+#[test]
+fn relative_url_dot_dotdot_relative() {
+    let scenario = Scenario::builder()
+        .get("https://a.test/x/foo.html")
+        .redirect(StatusCode::FOUND, "./../bar.html")
+        .build();
+
+    let flow = scenario
+        .to_redirect()
+        .as_new_flow(RedirectAuthHeaders::Never)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(&flow.uri().to_string(), "https://a.test/bar.html");
+}
+
+#[test]
+fn relative_url_parent_overflow_relative() {
+    let scenario = Scenario::builder()
+        .get("https://a.test/x/foo.html")
+        .redirect(StatusCode::FOUND, "../../bar.html")
+        .build();
+
+    let error = scenario
+        .to_redirect()
+        .as_new_flow(RedirectAuthHeaders::Never)
+        .unwrap_err();
+
+    assert_eq!(
+        error,
+        Error::BadLocationHeader("../../bar.html".to_string())
+    );
 }
 
 #[test]

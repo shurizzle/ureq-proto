@@ -1,7 +1,7 @@
 use std::mem;
 
+use http::uri::PathAndQuery;
 use http::{header, HeaderMap, HeaderName, HeaderValue, Method, Request, Uri, Version};
-use url::Url;
 
 use crate::body::BodyWriter;
 use crate::ext::MethodExt;
@@ -162,18 +162,8 @@ impl<Body> AmendedRequest<Body> {
     }
 
     pub fn new_uri_from_location(&self, location: &str) -> Result<Uri, Error> {
-        let base = Url::parse(&self.uri().to_string()).expect("base uri to be a url");
-
-        let url = base
-            .join(location)
-            .map_err(|_| Error::BadLocationHeader(location.to_string()))?;
-
-        let uri = url
-            .to_string()
-            .parse::<Uri>()
-            .map_err(|_| Error::BadLocationHeader(url.to_string()))?;
-
-        Ok(uri)
+        let base = self.uri().clone();
+        join(base, location)
     }
 
     pub fn analyze(
@@ -261,9 +251,101 @@ impl<Body> AmendedRequest<Body> {
     }
 }
 
+fn join(base: Uri, location: &str) -> Result<Uri, Error> {
+    let mut parts = base.into_parts();
+
+    let maybe = location.parse::<Uri>();
+    let has_scheme = maybe
+        .as_ref()
+        .ok()
+        .map(|u| u.scheme().is_some())
+        .unwrap_or(false);
+
+    if has_scheme {
+        // Location is a complete Uri.
+        // unwrap is ok beause has_scheme cannot be true if parsing failed.
+        return Ok(maybe.unwrap());
+    }
+
+    if location.starts_with("/") {
+        // Location is root-relative, i.e. we keep the
+        // authority of the base uri but replace the path
+
+        let pq: PathAndQuery = location
+            .parse()
+            .map_err(|_| Error::BadLocationHeader(location.to_string()))?;
+
+        parts.path_and_query = Some(pq);
+    } else {
+        // Location is relative, i.e. y/foo.html, ../ or ./ which means
+        // we should interpret it against the base uri path.
+        let base_path = parts
+            .path_and_query
+            .as_ref()
+            .map(|p| p.path())
+            .unwrap_or("/");
+
+        let total_path = join_relative(base_path, location)?;
+
+        let pq: PathAndQuery = total_path
+            .parse()
+            .map_err(|_| Error::BadLocationHeader(location.to_string()))?;
+
+        parts.path_and_query = Some(pq);
+    }
+
+    let uri = Uri::from_parts(parts).map_err(|_| Error::BadLocationHeader(location.to_string()))?;
+
+    Ok(uri)
+}
+
+fn join_relative(base_path: &str, location: &str) -> Result<String, Error> {
+    // base_path should be at least "/".
+    assert!(!base_path.is_empty());
+    // we should not attempt to join relative if location starts with "/"
+    assert!(!location.starts_with("/"));
+
+    let mut joiner: Vec<&str> = base_path.split('/').collect();
+
+    // "" => [""]
+    // "/" => ["", ""]
+    // "/foo" => ["", "foo"]
+    // "/foo/" => ["", "foo", ""]
+    if joiner.len() > 1 {
+        joiner.pop();
+    }
+
+    for segment in location.split('/') {
+        if segment == "." {
+            // do nothing
+        } else if segment == ".." {
+            if joiner.len() == 1 {
+                trace!("Location is relative above root");
+                return Err(Error::BadLocationHeader(location.to_string()));
+            }
+            joiner.pop();
+        } else {
+            joiner.push(segment);
+        }
+    }
+
+    Ok(joiner.join("/"))
+}
+
 pub(crate) struct RequestInfo {
     pub body_mode: BodyWriter,
     pub req_host_header: bool,
     pub req_auth_header: bool,
     pub req_body_header: bool,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn join_things() {
+        let uri: Uri = "foo.html".parse().unwrap();
+        println!("{:?}", uri.into_parts());
+    }
 }
