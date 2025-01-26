@@ -6,7 +6,7 @@ use http::{header, HeaderMap, HeaderName, HeaderValue, Method, Request, Uri, Ver
 use crate::body::BodyWriter;
 use crate::ext::MethodExt;
 use crate::util::compare_lowercase_ascii;
-use crate::Error;
+use crate::{CapitalizeHeaders, Error};
 
 /// `Request` with amends.
 ///
@@ -159,6 +159,14 @@ impl<Body> AmendedRequest<Body> {
     pub fn new_uri_from_location(&self, location: &str) -> Result<Uri, Error> {
         let base = self.uri().clone();
         join(base, location)
+    }
+
+    pub fn needs_capitalization(&self) -> bool {
+        if !matches!(self.version(), Version::HTTP_09 | Version::HTTP_10 | Version::HTTP_11) {
+            return false;
+        }
+
+        self.request.extensions().get::<CapitalizeHeaders>().is_some()
     }
 
     pub fn analyze(

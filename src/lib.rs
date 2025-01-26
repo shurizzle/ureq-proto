@@ -36,3 +36,7 @@ pub mod parser;
 
 #[doc(hidden)]
 pub use util::ArrayVec;
+
+/// Capitalize the names of headers in HTTP <2.
+#[derive(Debug, Clone, Copy)]
+pub struct CapitalizeHeaders;
