@@ -1,5 +1,6 @@
 //! A single request-response. No redirection or other logic.
 
+use std::char::ToUppercase;
 use std::fmt;
 use std::io::Write;
 use std::marker::PhantomData;
@@ -421,7 +422,13 @@ fn try_write_prelude_part<Body>(
             let all = request.headers();
             let skipped = all.skip(*index);
 
-            do_write_headers(skipped, index, header_count - 1, w);
+            do_write_headers(
+                skipped,
+                index,
+                header_count - 1,
+                request.needs_capitalization(),
+                w,
+            );
 
             if *index == header_count {
                 state.phase = Phase::SendBody;
@@ -438,13 +445,82 @@ fn do_write_send_line(line: (&Method, &str, Version), w: &mut Writer) -> bool {
     w.try_write(|w| write!(w, "{} {} {:?}\r\n", line.0, line.1, line.2))
 }
 
-fn do_write_headers<'a, I>(headers: I, index: &mut usize, last_index: usize, w: &mut Writer)
-where
+#[derive(Debug, Clone)]
+struct HeaderCapitalize<I: Iterator<Item = char>> {
+    up: bool,
+    iter: I,
+    upiter: Option<ToUppercase>,
+}
+
+impl<'a> HeaderCapitalize<std::str::Chars<'a>> {
+    #[inline(always)]
+    pub fn from_str(s: &'a str) -> Self {
+        Self {
+            up: true,
+            iter: s.chars(),
+            upiter: None,
+        }
+    }
+}
+
+impl<'a> From<&'a HeaderName> for HeaderCapitalize<std::str::Chars<'a>> {
+    #[inline(always)]
+    fn from(value: &'a HeaderName) -> Self {
+        Self::from_str(value.as_str())
+    }
+}
+
+impl<I: Iterator<Item = char>> Iterator for HeaderCapitalize<I> {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(ref mut upiter) = self.upiter {
+                if let Some(res) = upiter.next() {
+                    return Some(res);
+                } else {
+                    self.upiter = None;
+                }
+            }
+            let c = self.iter.next()?;
+            if c == '-' {
+                self.up = true;
+                return Some('-');
+            }
+            if !self.up {
+                return Some(c);
+            }
+            self.up = false;
+            self.upiter = Some(c.to_uppercase());
+        }
+    }
+}
+
+impl<I: Iterator<Item = char> + Clone> fmt::Display for HeaderCapitalize<I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for c in self.clone() {
+            core::fmt::Write::write_char(f, c)?;
+        }
+        Ok(())
+    }
+}
+
+fn do_write_headers<'a, I>(
+    headers: I,
+    index: &mut usize,
+    last_index: usize,
+    capitalize: bool,
+    w: &mut Writer,
+) where
     I: Iterator<Item = (&'a HeaderName, &'a HeaderValue)>,
 {
     for h in headers {
         let success = w.try_write(|w| {
-            write!(w, "{}: ", h.0)?;
+            if capitalize {
+                write!(w, "{}: ", HeaderCapitalize::from(h.0))?;
+            } else {
+                write!(w, "{}: ", h.0)?;
+            }
             w.write_all(h.1.as_bytes())?;
             write!(w, "\r\n")?;
             if *index == last_index {
