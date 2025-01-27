@@ -484,9 +484,8 @@ impl<B> Call<RecvResponse, B> {
                 // if it is a redirect, we can allow the request to continue.
                 if let Some(mut r) = try_parse_partial_response::<MAX_RESPONSE_HEADERS>(input)? {
                     // A redirection must have a location header.
-                    let is_complete_redirection = r.status().is_redirection()
-                        && r.headers().contains_key(header::LOCATION)
-                    // If Transfer-Encoding or Content-Length are set that means we need more bytes
+                    let is_complete_redirection = r.status().is_redirection() && r.headers().contains_key(header::LOCATION)
+                        // If Transfer-Encoding or Content-Length are set that means we need more bytes
                         && !r.headers().contains_key(header::TRANSFER_ENCODING)
                         && !r.headers().contains_key(header::CONTENT_LENGTH);
 

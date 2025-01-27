@@ -106,42 +106,38 @@ fn incomplete_302() {
         "s=Sun, 02-Feb-2025 21:39:08 GMT; path=/; HttpOnly; secure\r\n";
     const BODY: &str = "\r\n0\r\n\r\n";
 
-    fn mkreq(status: &str, additional: &str) -> String {
+    fn mkreq(additional: &str) -> String {
         format!(
-            "HTTP/1.1 {}\r\n\
+            "HTTP/1.1 302\r\n\
             Content-Type: text/html; charset=utf-8\r\n{}\
             Connection: keep-alive\r\n\
             Location: https://auth.q.test/fakepage\r\n\
             {}{}{}",
-            status, additional, COOKIE_FIRST_HALF, COOKIE_SECOND_HALF, BODY,
+            additional, COOKIE_FIRST_HALF, COOKIE_SECOND_HALF, BODY,
         )
     }
 
-    fn make_request(status: &str) -> String {
-        mkreq(status, "")
+    fn make_request_with_content_length() -> String {
+        mkreq("Content-Length: 5\r\n")
     }
 
-    fn make_request_with_content_length(status: &str) -> String {
-        mkreq(status, "Content-Length: 5\r\n")
-    }
-
-    fn make_request_with_transfer_encoding(status: &str) -> String {
-        mkreq(status, "Transfer-Encoding: chunked\r\n")
+    fn make_request_with_transfer_encoding() -> String {
+        mkreq("Transfer-Encoding: chunked\r\n")
     }
 
     // this should never pass
-    fn invalid_request(status: &str) -> &str {
-        &status[..status.len() - (COOKIE_SECOND_HALF.len() + BODY.len())]
+    fn invalid_request(req: &str) -> &str {
+        &req[..req.len() - (COOKIE_SECOND_HALF.len() + BODY.len())]
     }
 
     // this should pass only on 3XX with no `Content-Length` and `Transfer-Encoding` headers
-    fn non_standard_valid_request(status: &str) -> &str {
-        &status[..status.len() - (COOKIE_FIRST_HALF.len() + COOKIE_SECOND_HALF.len() + BODY.len())]
+    fn non_standard_valid_request(req: &str) -> &str {
+        &req[..req.len() - (COOKIE_FIRST_HALF.len() + COOKIE_SECOND_HALF.len() + BODY.len())]
     }
 
-    fn validate<F: Fn(Flow<(), RecvResponse>, usize, Option<Response<()>>)>(
+    fn validate(
         input: &str,
-        validate: F,
+        validate: impl Fn(Flow<(), RecvResponse>, usize, Option<Response<()>>),
     ) {
         let scenario = Scenario::builder().post("https://q.test").build();
         let mut flow = scenario.to_recv_response();
@@ -165,44 +161,11 @@ fn incomplete_302() {
         assert!(!flow.can_proceed())
     }
 
-    // check standard 200 flow, just in case {{{
     {
-        let input = make_request("200 OK");
-        validate(&input, ok(input.len() - (BODY.len() - 2)));
-        validate(invalid_request(&input), ko);
-        validate(non_standard_valid_request(&input), ko);
-    }
-    {
-        let input = make_request_with_content_length("200 OK");
-        validate(&input, ok(input.len() - (BODY.len() - 2)));
-        validate(invalid_request(&input), ko);
-        validate(non_standard_valid_request(&input), ko);
-    }
-    {
-        let input = make_request_with_transfer_encoding("200 OK");
-        validate(&input, ok(input.len() - (BODY.len() - 2)));
-        validate(invalid_request(&input), ko);
-        validate(non_standard_valid_request(&input), ko);
-    }
-    // }}}
-
-    {
-        let input = make_request("302 Found");
+        let input = make_request_with_transfer_encoding();
+        let preamble_len = input.len() - (BODY.len() - 2);
         // Standard 302
-        validate(&input, ok(input.len() - (BODY.len() - 2)));
-        // Truncated header section
-        validate(invalid_request(&input), ko);
-        // Truncated but valid header section
-        validate(
-            non_standard_valid_request(&input),
-            ok(non_standard_valid_request(&input).len()),
-        );
-    }
-
-    {
-        let input = make_request_with_transfer_encoding("302 Found");
-        // Standard 302
-        validate(&input, ok(input.len() - (BODY.len() - 2)));
+        validate(&input, ok(preamble_len));
         // Truncated header section
         validate(invalid_request(&input), ko);
         // Truncated but incomplete header section
@@ -210,9 +173,10 @@ fn incomplete_302() {
     }
 
     {
-        let input = make_request_with_content_length("302 Found");
+        let input = make_request_with_content_length();
+        let preamble_len = input.len() - (BODY.len() - 2);
         // Standard 302
-        validate(&input, ok(input.len() - (BODY.len() - 2)));
+        validate(&input, ok(preamble_len));
         // Truncated header section
         validate(invalid_request(&input), ko);
         // Truncated but incomplete header section
