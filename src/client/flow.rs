@@ -581,7 +581,7 @@ impl<B> Flow<B, RecvResponse> {
         // We want the last Location header.
         self.inner.location = response
             .headers()
-            .get_all("location")
+            .get_all(header::LOCATION)
             .into_iter()
             .last()
             .cloned();

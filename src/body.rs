@@ -1,7 +1,7 @@
 use std::fmt;
 use std::io::Write;
 
-use http::{HeaderName, HeaderValue, Method};
+use http::{header, HeaderName, HeaderValue, Method};
 
 use crate::chunk::Dechunker;
 use crate::util::{compare_lowercase_ascii, log_data, Writer};
@@ -117,12 +117,12 @@ impl BodyWriter {
         match self.mode {
             SenderMode::None => unreachable!(),
             SenderMode::Sized(size) => (
-                HeaderName::from_static("content-length"),
+                header::CONTENT_LENGTH,
                 // TODO(martin): avoid allocation here
                 HeaderValue::from_str(&size.to_string()).unwrap(),
             ),
             SenderMode::Chunked => (
-                HeaderName::from_static("transfer-encoding"),
+                header::TRANSFER_ENCODING,
                 HeaderValue::from_static("chunked"),
             ),
         }
@@ -276,7 +276,7 @@ impl BodyReader {
         http10: bool,
         method: &Method,
         status_code: u16,
-        header_lookup: &'a dyn Fn(&str) -> Option<&'a str>,
+        header_lookup: &'a dyn Fn(HeaderName) -> Option<&'a str>,
     ) -> Result<Self, Error> {
         let is_success = (200..=299).contains(&status_code);
         let is_informational = (100..=199).contains(&status_code);
@@ -316,13 +316,13 @@ impl BodyReader {
 
     fn header_defined<'a>(
         http10: bool,
-        header_lookup: &'a dyn Fn(&str) -> Option<&'a str>,
+        header_lookup: &'a dyn Fn(HeaderName) -> Option<&'a str>,
     ) -> Result<Self, Error> {
         let mut content_length: Option<u64> = None;
         let mut chunked = false;
 
         // for head in headers {
-        if let Some(value) = header_lookup("content-length") {
+        if let Some(value) = header_lookup(header::CONTENT_LENGTH) {
             let v = value
                 .parse::<u64>()
                 .map_err(|_| Error::BadContentLengthHeader)?;
@@ -332,7 +332,7 @@ impl BodyReader {
             content_length = Some(v);
         }
 
-        if let Some(value) = header_lookup("transfer-encoding") {
+        if let Some(value) = header_lookup(header::TRANSFER_ENCODING) {
             // Header can repeat, stop looking if we found "chunked"
             chunked = value
                 .split(',')

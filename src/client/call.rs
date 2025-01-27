@@ -485,14 +485,14 @@ impl<B> Call<RecvResponse, B> {
                 if let Some(mut r) = try_parse_partial_response::<MAX_RESPONSE_HEADERS>(input)? {
                     // A redirection must have a location header.
                     let is_complete_redirection =
-                        r.status().is_redirection() && r.headers().contains_key("location");
+                        r.status().is_redirection() && r.headers().contains_key(header::LOCATION);
 
                     if is_complete_redirection {
                         // Insert a synthetic connection: close, since the connection is
                         // not valid after using a partial request.
                         debug!("Partial redirection response, insert fake connection: close");
                         r.headers_mut()
-                            .insert("connection", HeaderValue::from_static("close"));
+                            .insert(header::CONNECTION, HeaderValue::from_static("close"));
 
                         (input.len(), r)
                     } else {
@@ -518,7 +518,7 @@ impl<B> Call<RecvResponse, B> {
             return Ok(Some((input_used, response)));
         }
 
-        let header_lookup = |name: &str| {
+        let header_lookup = |name: HeaderName| {
             if let Some(header) = response.headers().get(name) {
                 return header.to_str().ok();
             }
